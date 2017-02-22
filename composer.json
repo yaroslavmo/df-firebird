@@ -1,0 +1,44 @@
+{
+  "name":        "dreamfactory/df-firebird",
+  "description": "Firebird SQL Database support for DreamFactory",
+  "keywords":    [
+    "dreamfactory",
+    "database",
+    "sql",
+    "firebird",
+    "pdo_firebird",
+    "pdo_interbase"
+  ],
+  "homepage":    "https://www.dreamfactory.com/",
+  "license":     "Apache-2.0",
+  "authors":     [
+    {
+      "name":  "Arif Islam",
+      "email": "arifislam@dreamfactory.com"
+    },
+    {
+      "name":  "Lee Hicks",
+      "email": "leehicks@dreamfactory.com"
+    }
+  ],
+  "support":     {
+    "email":  "support@dreamfactory.com",
+    "source": "https://github.com/dreamfactorysoftware/df-firebird",
+    "issues": "https://github.com/dreamfactorysoftware/df-firebird/issues",
+    "wiki":   "https://wiki.dreamfactory.com"
+  },
+  "require":     {
+    "dreamfactory/df-core": "~0.7.0",
+    "jacquestvanzuydam/laravel-firebird": "dev-5.4-support as dev-master"
+  },
+  "autoload":    {
+    "psr-4": {
+      "DreamFactory\\Core\\Firebird\\": "src/"
+    }
+  },
+  "extra":       {
+    "branch-alias": {
+      "dev-develop": "0.1.x-dev"
+    }
+  }
+}
