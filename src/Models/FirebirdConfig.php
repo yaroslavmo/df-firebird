@@ -6,16 +6,19 @@ use DreamFactory\Core\SqlDb\Models\SqlDbConfig;
 
 class FirebirdConfig extends SqlDbConfig
 {
+    /** {@inheritdoc} */
     public static function getDriverName()
     {
         return 'firebird';
     }
 
+    /** {@inheritdoc} */
     public static function getDefaultPort()
     {
         return 3050;
     }
 
+    /** {@inheritdoc} */
     protected function getConnectionFields()
     {
         $fields = parent::getConnectionFields();
@@ -23,6 +26,7 @@ class FirebirdConfig extends SqlDbConfig
         return array_merge($fields, ['charset']);
     }
 
+    /** {@inheritdoc} */
     public static function getDefaultConnectionInfo()
     {
         $defaults = parent::getDefaultConnectionInfo();
@@ -36,6 +40,7 @@ class FirebirdConfig extends SqlDbConfig
         return $defaults;
     }
 
+    /** {@inheritdoc} */
     public static function getConfigSchema()
     {
         $schema = parent::getConfigSchema();

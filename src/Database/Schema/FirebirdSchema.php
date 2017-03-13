@@ -12,20 +12,14 @@ use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Firebird\Database\DBAL\Driver\Ibase\Firebird\Driver;
 use DreamFactory\Core\Firebird\Database\DBAL\Portability\Connection;
 use DreamFactory\Core\Enums\DbSimpleTypes;
+use Cache;
 
 class FirebirdSchema extends Schema
 {
+    /** {@inheritdoc} */
     const PROVIDES_FIELD_SCHEMA = true;
 
-    /**
-     * Quotes a table name for use in a query.
-     * If the table name contains schema prefix, the prefix will also be properly quoted.
-     *
-     * @param string $name table name
-     *
-     * @return string the properly quoted table name
-     * @see quoteSimpleTableName
-     */
+    /** {@inheritdoc} */
     public function quoteTableName($name)
     {
         if (strpos($name, '.') === false) {
@@ -39,31 +33,22 @@ class FirebirdSchema extends Schema
         return implode('.', $parts);
     }
 
-    /**
-     * Quotes a simple table name for use in a query.
-     * A simple table name does not schema prefix.
-     *
-     * @param string $name table name
-     *
-     * @return string the properly quoted table name
-     */
+    /** {@inheritdoc} */
     public function quoteSimpleTableName($name)
     {
         return static::LEFT_QUOTE_CHARACTER . $name . static::RIGHT_QUOTE_CHARACTER;
     }
 
+    /** {@inheritdoc} */
     protected function findTableNames(
         /** @noinspection PhpUnusedParameterInspection */
         $schema = ''
     ){
         $sql =
             'select rdb$relation_name from rdb$relations where rdb$view_blr is null and (rdb$system_flag is null or rdb$system_flag = 0)';
-
         $rows = $this->connection->select($sql);
-
         $defaultSchema = $this->getNamingSchema();
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
-
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
@@ -112,7 +97,7 @@ class FirebirdSchema extends Schema
         foreach ($columns as $column) {
             $col = $column->toArray();
             $name = array_get($col, 'name');
-            $col['type'] = $col['type']->__toString();
+            $col['type'] = strtolower($col['type']->__toString());
             $col['db_type'] = $col['type'];
             $col['size'] = array_get($col, 'length');
             $col['allow_null'] = !array_get($col, 'notnull', false);
@@ -123,12 +108,41 @@ class FirebirdSchema extends Schema
             $col['ref_field'] = (array_get($fks, $name)) ? $fks[$name]['ref_field'] : null;
             $col['ref_on_update'] = (array_get($fks, $name)) ? $fks[$name]['ref_on_update'] : null;
             $col['ref_on_delete'] = (array_get($fks, $name)) ? $fks[$name]['ref_on_delete'] : null;
+            $col['is_keyword'] = $this->isReservedKeyword($name);
             $out[] = $col;
         }
 
         return $out;
     }
 
+    /**
+     * Checks to see if a name is a reserved keyword.
+     *
+     * @param string $name
+     *
+     * @return bool
+     */
+    protected function isReservedKeyword($name)
+    {
+        $isKeyword = Cache::remember(
+            'firebird-keyword:' . $name,
+            config('df.default_cache_ttl', 300),
+            function () use ($name){
+                $doctrine = new Driver();
+                $config = $this->getConnectionConfig();
+                $conn = new Connection($config, $doctrine);
+                $sm = $doctrine->getSchemaManager($conn);
+                $pl = $sm->getDatabasePlatform();
+                $keywordList = $pl->getReservedKeywordsList();
+
+                return $keywordList->isKeyword($name);
+            }
+        );
+
+        return $isKeyword;
+    }
+
+    /** {@inheritdoc} */
     protected function createTable($table, $options)
     {
         if (empty($tableName = array_get($table, 'name'))) {
@@ -164,6 +178,13 @@ class FirebirdSchema extends Schema
         return true;
     }
 
+    /**
+     * Generates column options for Doctrine Column type.
+     *
+     * @param array $info
+     *
+     * @return array
+     */
     protected function getDoctrineColumnOptions($info)
     {
         $info = $this->cleanFieldInfo($info);
@@ -200,6 +221,7 @@ class FirebirdSchema extends Schema
         return $options;
     }
 
+    /** {@inheritdoc} */
     public function dropTable($table)
     {
         $table = trim($table, '".');
@@ -219,6 +241,7 @@ class FirebirdSchema extends Schema
         return true;
     }
 
+    /** {@inheritdoc} */
     public function dropColumns($table, $columns)
     {
         $table = trim($table, '"');
@@ -246,6 +269,7 @@ class FirebirdSchema extends Schema
         $sm->alterTable($td);
     }
 
+    /** {@inheritdoc} */
     protected function updateTable($tableSchema, $changes)
     {
         $doctrine = new Driver();
@@ -295,6 +319,14 @@ class FirebirdSchema extends Schema
         }
     }
 
+    /**
+     * Cleans and validates column info.
+     *
+     * @param array $info
+     *
+     * @return array|mixed|null|string
+     * @throws \Exception
+     */
     protected function cleanFieldInfo($info)
     {
         $out = [];
@@ -329,6 +361,11 @@ class FirebirdSchema extends Schema
         return $out;
     }
 
+    /**
+     * Gets connection configs.
+     *
+     * @return array
+     */
     private function getConnectionConfig()
     {
         return [
@@ -341,9 +378,7 @@ class FirebirdSchema extends Schema
         ];
     }
 
-    /**
-     * @inheritdoc
-     */
+    /** {@inheritdoc} */
     protected function translateSimpleColumnTypes(array &$info)
     {
         // override this in each schema class
@@ -408,6 +443,7 @@ class FirebirdSchema extends Schema
         }
     }
 
+    /** {@inheritdoc} */
     protected function validateColumnSettings(array &$info)
     {
         // override this in each schema class
@@ -491,6 +527,7 @@ class FirebirdSchema extends Schema
         }
     }
 
+    /** {@inheritdoc} */
     protected function buildColumnDefinition(array $info)
     {
         $type = (isset($info['type'])) ? $info['type'] : null;
