@@ -28,8 +28,8 @@
     "wiki":   "https://wiki.dreamfactory.com"
   },
   "require":     {
-    "doctrine/dbal": "2.5.*",
-    "dreamfactory/df-core": "~0.8.0",
+    "doctrine/dbal":                      "2.5.*",
+    "dreamfactory/df-sqldb":              "~0.9.0",
     "jacquestvanzuydam/laravel-firebird": "dev-5.4-support as dev-master"
   },
   "autoload":    {
