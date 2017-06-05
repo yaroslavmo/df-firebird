@@ -9,7 +9,7 @@ This library requires the **interbase** PHP extension to be installed.
     
 This library has following dependencies.
     
-    "dreamfactory/df-core":                 "~0.8.0",
+    "dreamfactory/df-core":                 "~0.10.0",
     "jacquestvanzuydam/laravel-firebird":   "dev-5.4-support as dev-master"
     "doctrine/dbal":                        "2.5.*",
 
