@@ -29,7 +29,7 @@
   },
   "require":     {
     "doctrine/dbal":                      "2.5.*",
-    "dreamfactory/df-sqldb":              "~0.10.0",
+    "dreamfactory/df-sqldb":              "~0.11.0",
     "jacquestvanzuydam/laravel-firebird": "dev-5.4-support as dev-master"
   },
   "autoload":    {
@@ -39,7 +39,7 @@
   },
   "extra":       {
     "branch-alias": {
-      "dev-develop": "0.2.x-dev"
+      "dev-develop": "0.3.x-dev"
     }
   }
 }
