@@ -17,9 +17,6 @@ use Cache;
 class FirebirdSchema extends Schema
 {
     /** {@inheritdoc} */
-    const PROVIDES_FIELD_SCHEMA = true;
-
-    /** {@inheritdoc} */
     public function quoteTableName($name)
     {
         if (strpos($name, '.') === false) {
@@ -31,12 +28,6 @@ class FirebirdSchema extends Schema
         }
 
         return implode('.', $parts);
-    }
-
-    /** {@inheritdoc} */
-    public function quoteSimpleTableName($name)
-    {
-        return static::LEFT_QUOTE_CHARACTER . $name . static::RIGHT_QUOTE_CHARACTER;
     }
 
     /** {@inheritdoc} */
