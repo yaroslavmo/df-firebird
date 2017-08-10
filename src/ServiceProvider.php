@@ -1,7 +1,6 @@
 <?php
 namespace DreamFactory\Core\Firebird;
 
-use DreamFactory\Core\Components\ServiceDocBuilder;
 use DreamFactory\Core\Components\DbSchemaExtensions;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\Firebird\Database\Connection;
@@ -16,8 +15,6 @@ use Illuminate\Database\DatabaseManager;
 
 class ServiceProvider extends \Illuminate\Support\ServiceProvider
 {
-    use ServiceDocBuilder;
-
     public function register()
     {
         $this->app->register(FirebirdServiceProvider::class);
@@ -45,9 +42,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'description'     => 'Database service supporting Firebird connections.',
                     'group'           => ServiceTypeGroups::DATABASE,
                     'config_handler'  => FirebirdConfig::class,
-                    'default_api_doc' => function ($service){
-                        return $this->buildServiceDoc($service->id, Firebird::getApiDocInfo($service));
-                    },
                     'factory'         => function ($config){
                         return new Firebird($config);
                     },
