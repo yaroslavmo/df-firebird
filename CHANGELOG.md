@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [0.4.0] - 2017-08-17
+### Changed
+- Reworked API doc usage and generation
+- Reworked schema interface for database services in order to better control caching
+
 ## [0.3.0] - 2017-07-27
 - Separating base schema from SQL schema
 
@@ -13,6 +19,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2017-04-21
 First official release of this library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.1.0...0.2.0
