@@ -134,7 +134,7 @@ class FirebirdSchema extends Schema
     }
 
     /** {@inheritdoc} */
-    protected function createTable($table, $options)
+    public function createTable($table, $options)
     {
         if (empty($tableName = array_get($table, 'name'))) {
             throw new \Exception("No valid name exist in the received table schema.");
@@ -261,7 +261,7 @@ class FirebirdSchema extends Schema
     }
 
     /** {@inheritdoc} */
-    protected function updateTable($tableSchema, $changes)
+    public function updateTable($tableSchema, $changes)
     {
         $doctrine = new Driver();
         $config = $this->getConnectionConfig();

@@ -122,7 +122,7 @@ class Table extends \DreamFactory\Core\SqlDb\Resources\Table
                 }
 
                 if ($function = $info->getDbFunction(DbFunctionUses::FILTER)) {
-                    $out = $this->dbConn->raw($function);
+                    $out = $this->parent->getConnection()->raw($function);
                 } else {
                     if (Grammar::isKeyword($info->name)) {
                         $out = $info->quotedName;
