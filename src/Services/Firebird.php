@@ -3,23 +3,19 @@
 namespace DreamFactory\Core\Firebird\Services;
 
 use DreamFactory\Core\SqlDb\Services\SqlDb;
-use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\Firebird\Resources\Table;
 
 class Firebird extends SqlDb
 {
-    protected static $resources = [
-        Schema::RESOURCE_NAME => [
-            'name'       => Schema::RESOURCE_NAME,
-            'class_name' => Schema::class,
-            'label'      => 'Schema',
-        ],
-        Table::RESOURCE_NAME  => [
-            'name'       => Table::RESOURCE_NAME,
-            'class_name' => Table::class,
-            'label'      => 'Tables',
-        ]
-    ];
+    public function getResourceHandlers()
+    {
+        $handlers = parent::getResourceHandlers();
+
+        $handlers[Table::RESOURCE_NAME]['class_name'] = Table::class;
+
+        return $handlers;
+    }
+
 
     public static function adaptConfig(array &$config)
     {
