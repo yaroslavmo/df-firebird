@@ -12,6 +12,7 @@ use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Firebird\Database\DBAL\Driver\Ibase\Firebird\Driver;
 use DreamFactory\Core\Firebird\Database\DBAL\Portability\Connection;
 use DreamFactory\Core\Enums\DbSimpleTypes;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use Cache;
 
 class FirebirdSchema extends Schema
@@ -28,6 +29,16 @@ class FirebirdSchema extends Schema
         }
 
         return implode('.', $parts);
+    }
+
+    /** {@inheritdoc} */
+    public function getSupportedResourceTypes()
+    {
+        return [
+            DbResourceTypes::TYPE_SCHEMA,
+            DbResourceTypes::TYPE_TABLE,
+            DbResourceTypes::TYPE_TABLE_FIELD,
+        ];
     }
 
     /** {@inheritdoc} */
