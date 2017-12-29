@@ -22,14 +22,14 @@
     }
   ],
   "support":     {
-    "email":  "support@dreamfactory.com",
+    "email":  "dspsupport@dreamfactory.com",
     "source": "https://github.com/dreamfactorysoftware/df-firebird",
     "issues": "https://github.com/dreamfactorysoftware/df-firebird/issues",
     "wiki":   "https://wiki.dreamfactory.com"
   },
   "require":     {
     "doctrine/dbal":                      "2.5.*",
-    "dreamfactory/df-sqldb":              "~0.14.0",
+    "dreamfactory/df-sqldb":              "~0.15.0",
     "jacquestvanzuydam/laravel-firebird": "dev-5.4-support as dev-master"
   },
   "autoload":    {
@@ -39,7 +39,12 @@
   },
   "extra":       {
     "branch-alias": {
-      "dev-develop": "0.6.x-dev"
+      "dev-develop": "0.7.x-dev"
+    },
+    "laravel": {
+      "providers": [
+        "DreamFactory\\Core\\Firebird\\ServiceProvider"
+      ]
     }
   }
 }

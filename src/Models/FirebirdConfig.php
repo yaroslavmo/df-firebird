@@ -44,12 +44,20 @@ class FirebirdConfig extends SqlDbConfig
     public static function getConfigSchema()
     {
         $schema = parent::getConfigSchema();
-        array_pop($schema);             // Remove statement
-        array_pop($schema);             // Remove attributes
-        array_pop($schema);             // Remove options
-        $charset = array_pop($schema);  // Save charset
-        array_pop($schema);             // Remove schema
-        array_push($schema, $charset);  // Restore charset
+        $cacheTtl = array_pop($schema);
+        $cacheEnabled = array_pop($schema);
+        $maxRecords = array_pop($schema);
+        $upserts = array_pop($schema);
+        array_pop($schema);                 // Remove statement
+        array_pop($schema);                 // Remove attributes
+        array_pop($schema);                 // Remove options
+        $charset = array_pop($schema);      // Save charset
+        array_pop($schema);                 // Remove schema
+        array_push($schema, $charset);      // Restore charset
+        array_push($schema, $upserts);      // Restore upsert
+        array_push($schema, $maxRecords);   // Restore max_records
+        array_push($schema, $cacheEnabled); // Restore cache enabled
+        array_push($schema, $cacheTtl);     // Restore cache TTL
 
         return $schema;
     }

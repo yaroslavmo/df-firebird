@@ -3,6 +3,16 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+## [0.7.0] - 2017-12-28
+### Added
+- DF-1224 Added ability to set different default limits (max_records_returned) per service
+- Added package discovery
+### Changed
+- Separated resources from resource handlers
+### Fixed
+- Schema create bugfix
+- Fixed config fields
+
 ## [0.6.0] - 2017-11-03
 - Move preferred schema naming to service level
 
@@ -24,7 +34,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2017-04-21
 First official release of this library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.6.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/dreamfactorysoftware/df-firebird/compare/0.3.0...0.4.0
