@@ -2,59 +2,24 @@
 
 namespace DreamFactory\Core\Firebird\Database\Schema;
 
-use Doctrine\DBAL\Schema\Column;
-use Doctrine\DBAL\Schema\ColumnDiff;
-use Doctrine\DBAL\Schema\ForeignKeyConstraint;
-use Doctrine\DBAL\Schema\TableDiff;
-use Doctrine\DBAL\Types\Type;
-use DreamFactory\Core\Database\Components\Schema;
+use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
-use DreamFactory\Core\Firebird\Database\DBAL\Driver\Ibase\Firebird\Driver;
-use DreamFactory\Core\Firebird\Database\DBAL\Portability\Connection;
 use DreamFactory\Core\Enums\DbSimpleTypes;
-use DreamFactory\Core\Enums\DbResourceTypes;
-use Cache;
+use DreamFactory\Core\SqlDb\Database\Schema\SqlSchema;
 
-class FirebirdSchema extends Schema
+class FirebirdSchema extends SqlSchema
 {
-    /** {@inheritdoc} */
-    public function quoteTableName($name)
+    protected function getTableNames($schema = '')
     {
-        if (strpos($name, '.') === false) {
-            return $this->quoteSimpleTableName($name);
-        }
-        $parts = explode('.', $name);
-        foreach ($parts as $i => $part) {
-            $parts[$i] = $this->quoteSimpleTableName($part);
-        }
+        $sql = <<<'SQL'
+SELECT TRIM(RDB$RELATION_NAME) AS RDB$RELATION_NAME FROM RDB$RELATIONS 
+WHERE (RDB$SYSTEM_FLAG=0 OR RDB$SYSTEM_FLAG IS NULL) and (RDB$VIEW_BLR IS NULL);
+SQL;
 
-        return implode('.', $parts);
-    }
-
-    /** {@inheritdoc} */
-    public function getSupportedResourceTypes()
-    {
-        return [
-            DbResourceTypes::TYPE_SCHEMA,
-            DbResourceTypes::TYPE_TABLE,
-            DbResourceTypes::TYPE_TABLE_FIELD,
-        ];
-    }
-
-    /** {@inheritdoc} */
-    protected function findTableNames(
-        /** @noinspection PhpUnusedParameterInspection */
-        $schema = ''
-    ){
-        $sql =
-            'select rdb$relation_name from rdb$relations where rdb$view_blr is null and (rdb$system_flag is null or rdb$system_flag = 0)';
-        $rows = $this->connection->select($sql);
+        $rows = $this->selectColumn($sql);
         $names = [];
-        foreach ($rows as $row) {
-            $row = array_change_key_case((array)$row, CASE_UPPER);
-            $row = array_values($row);
+        foreach ($rows as $resourceName) {
             $schemaName = $schema;
-            $resourceName = trim($row[0]);
             $internalName = $resourceName;
             $name = $resourceName;
             $quotedName = $this->quoteTableName($resourceName);
@@ -65,258 +30,288 @@ class FirebirdSchema extends Schema
         return $names;
     }
 
-    protected function findColumns(TableSchema $table)
+    protected function getViewNames($schema = '')
     {
-        $doctrine = new Driver();
-        $config = $this->getConnectionConfig();
-        $conn = new Connection($config, $doctrine);
-        $sm = $doctrine->getSchemaManager($conn);
-        $tableInfo = $sm->listTableDetails($table->name);
-        $primaryKeyColumns = $tableInfo->getPrimaryKeyColumns();
-        $columns = $tableInfo->getColumns();
-        $foreignKeys = $tableInfo->getForeignKeys();
-        $fks = [];
-        /** @var ForeignKeyConstraint $foreignKey */
-        foreach ($foreignKeys as $foreignKey) {
-            $localField = array_get($foreignKey->getLocalColumns(), 0);
-            $foreignField = array_get($foreignKey->getForeignColumns(), 0);
-            $foreignTable = $foreignKey->getForeignTableName();
-            $onUpdate = $foreignKey->onUpdate();
-            $onDelete = $foreignKey->onDelete();
+        $sql = <<<'SQL'
+SELECT TRIM(RDB$RELATION_NAME) AS RDB$RELATION_NAME FROM RDB$RELATIONS 
+WHERE (RDB$SYSTEM_FLAG=0 OR RDB$SYSTEM_FLAG IS NULL) and (RDB$RELATION_TYPE = 1);
+SQL;
 
-            $fks[$localField] = [
-                'ref_table'     => $foreignTable,
-                'ref_field'     => $foreignField,
-                'ref_on_update' => $onUpdate,
-                'ref_on_delete' => $onDelete
-            ];
+        $rows = $this->selectColumn($sql);
+        $names = [];
+        foreach ($rows as $resourceName) {
+            $schemaName = $schema;
+            $internalName = $resourceName;
+            $name = $resourceName;
+            $quotedName = $this->quoteTableName($resourceName);
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
+            $names[strtolower($name)] = new TableSchema($settings);
         }
 
-        $out = [];
-        /** @var Column $column */
-        foreach ($columns as $column) {
-            $col = $column->toArray();
-            $name = array_get($col, 'name');
-            $col['type'] = strtolower($col['type']->__toString());
-            $col['db_type'] = $col['type'];
-            $col['size'] = array_get($col, 'length');
-            $col['allow_null'] = !array_get($col, 'notnull', false);
-            $col['auto_increment'] = array_get($col, 'autoincrement');
-            $col['is_primary_key'] = in_array($name, $primaryKeyColumns);
-            $col['is_foreign_key'] = in_array($name, array_keys($fks));
-            $col['ref_table'] = (array_get($fks, $name)) ? $fks[$name]['ref_table'] : null;
-            $col['ref_field'] = (array_get($fks, $name)) ? $fks[$name]['ref_field'] : null;
-            $col['ref_on_update'] = (array_get($fks, $name)) ? $fks[$name]['ref_on_update'] : null;
-            $col['ref_on_delete'] = (array_get($fks, $name)) ? $fks[$name]['ref_on_delete'] : null;
-            $col['is_keyword'] = $this->isReservedKeyword($name);
-            $out[] = $col;
-        }
+        return $names;
+    }
 
-        return $out;
+    protected function loadTableColumns(TableSchema $table)
+    {
+        $params = [':table1' => $table->resourceName];
+
+        // get all triggers for this table to check for auto incrementation
+        $sql = <<<'SQL'
+SELECT RDB$TRIGGER_SOURCE 
+FROM RDB$TRIGGERS
+WHERE RDB$RELATION_NAME = :table1 AND RDB$TRIGGER_TYPE = 1 and RDB$TRIGGER_INACTIVE = 0
+SQL;
+        $triggers = $this->selectColumn($sql, $params);
+
+        $sql = <<<'SQL'
+            SELECT TRIM(r.RDB$FIELD_NAME) AS "name", 
+            f.RDB$FIELD_TYPE AS "type", 
+            f.RDB$FIELD_SUB_TYPE AS "sub_type", 
+            f.RDB$FIELD_LENGTH AS "length", 
+            f.RDB$CHARACTER_LENGTH AS "char_length", 
+            f.RDB$FIELD_PRECISION AS "precision", 
+            f.RDB$FIELD_SCALE AS "scale", 
+            r.RDB$NULL_FLAG as "non_nullable", 
+            r.RDB$DEFAULT_SOURCE AS "default", 
+            r.RDB$DESCRIPTION AS "comment",
+            TRIM(cs.RDB$CHARACTER_SET_NAME) as "character_set",
+            TRIM(cl.RDB$COLLATION_NAME) as "collation"
+            FROM RDB$RELATION_FIELDS r 
+            LEFT OUTER JOIN RDB$FIELDS f ON r.RDB$FIELD_SOURCE = f.RDB$FIELD_NAME 
+            LEFT OUTER JOIN RDB$CHARACTER_SETS cs ON cs.RDB$CHARACTER_SET_ID = f.RDB$CHARACTER_SET_ID 
+            LEFT OUTER JOIN RDB$COLLATIONS cl ON cl.RDB$CHARACTER_SET_ID = f.RDB$CHARACTER_SET_ID AND cl.RDB$COLLATION_ID = f.RDB$COLLATION_ID
+            WHERE r.RDB$RELATION_NAME = :table1 
+            ORDER BY r.RDB$FIELD_POSITION
+SQL;
+        $result = $this->connection->select($sql, $params);
+        foreach ($result as $column) {
+            $column = array_change_key_case((array)$column, CASE_LOWER);
+            $c = new ColumnSchema(['name' => $column['name']]);
+            $c->quotedName = $this->quoteColumnName($c->name);
+            $c->allowNull = !array_get_bool($column,'non_nullable');
+            foreach ($triggers as $trigger) {
+                if (false !== stripos($trigger, $c->name)) {
+                    $c->autoIncrement = true;
+                    $seq = stristr($trigger, '.nextval', true);
+                    $seq = substr($seq, strrpos($seq, ' ') + 1);
+                    $table->sequenceName = $seq;
+                }
+            }
+            $type = array_get($column, 'type');
+            $subType = array_get($column, 'sub_type');
+            switch ((int)$type) {
+                case 7:
+                    $c->dbType = DbSimpleTypes::TYPE_SMALL_INT;
+                    switch ((int)$subType) {
+                        case 1:
+                            $c->dbType = 'numeric';
+                            break;
+                        case 2:
+                            $c->dbType = 'decimal';
+                            break;
+                    }
+                    break;
+                case 8:
+                    $c->dbType = DbSimpleTypes::TYPE_INTEGER;
+                    switch ((int)$subType) {
+                        case 1:
+                            $c->dbType = 'numeric';
+                            break;
+                        case 2:
+                            $c->dbType = 'decimal';
+                            break;
+                    }
+                    break;
+                case 10:
+                    $c->dbType = DbSimpleTypes::TYPE_FLOAT;
+                    break;
+                case 12:
+                    $c->dbType = DbSimpleTypes::TYPE_DATE;
+                    break;
+                case 13:
+                    $c->dbType = DbSimpleTypes::TYPE_TIME;
+                    break;
+                case 14:
+                    $c->dbType = 'char';
+                    break;
+                case 16:
+                    $c->dbType = DbSimpleTypes::TYPE_BIG_INT;
+                    switch ((int)$subType) {
+                        case 1:
+                            $c->dbType = 'numeric';
+                            break;
+                        case 2:
+                            $c->dbType = 'decimal';
+                            break;
+                    }
+                    break;
+                case 27:
+                    $c->dbType = DbSimpleTypes::TYPE_DOUBLE;
+                    break;
+                case 35:
+                    $c->dbType = DbSimpleTypes::TYPE_TIMESTAMP;
+                    break;
+                case 37:
+                    $c->dbType = 'varchar';
+                    break;
+                case 261:
+                    $c->dbType = 'blob';
+                    if (1 === (int)$subType) {
+                        $c->dbType = 'text';
+                    }
+                    break;
+                default:
+                    $c->dbType = strval($type) . ':' . strval($subType);
+            }
+            if (isset($column['collation']) && !empty($column['collation'])) {
+                $collation = $column['collation'];
+                if (0 === stripos($collation, 'utf') || 0 === stripos($collation, 'ucs')) {
+                    $c->supportsMultibyte = true;
+                }
+            }
+            if (isset($column['comment'])) {
+                $c->comment = $column['comment'];
+            }
+
+            $c->precision = intval($column['precision']);
+            $c->scale = intval($column['scale']);
+            // all of this is for consistency across drivers
+            if ($c->precision > 0) {
+                if ($c->scale <= 0) {
+                    $c->size = $c->precision;
+                    $c->scale = null;
+                }
+            } else {
+                $c->precision = null;
+                $c->scale = null;
+                $c->size = intval($column['char_length']);
+                if ($c->size <= 0) {
+                    $c->size = null;
+                }
+            }
+            $this->extractLimit($c, $c->dbType);
+            $c->fixedLength = $this->extractFixedLength($c->dbType);
+            $this->extractType($c, $c->dbType);
+            $this->extractDefault($c, $column['default']);
+
+            $table->addColumn($c);
+        }
     }
 
     /**
-     * Checks to see if a name is a reserved keyword.
-     *
-     * @param string $name
-     *
-     * @return bool
+     * @inheritdoc
      */
-    protected function isReservedKeyword($name)
+    protected function getTableConstraints($schema = '')
     {
-        $isKeyword = Cache::remember(
-            'firebird-keyword:' . $name,
-            config('df.default_cache_ttl', 300),
-            function () use ($name){
-                $doctrine = new Driver();
-                $config = $this->getConnectionConfig();
-                $conn = new Connection($config, $doctrine);
-                $sm = $doctrine->getSchemaManager($conn);
-                $pl = $sm->getDatabasePlatform();
-                $keywordList = $pl->getReservedKeywordsList();
+        $sql = <<<'SQL'
+      SELECT TRIM(rc.RDB$CONSTRAINT_NAME) AS constraint_name,
+      TRIM(rc.RDB$CONSTRAINT_TYPE) AS constraint_type,
+      TRIM(i.RDB$RELATION_NAME) AS table_name,
+      TRIM(s.RDB$FIELD_NAME) AS column_name,
+      TRIM(i.RDB$DESCRIPTION) AS description,
+      TRIM(refc.RDB$UPDATE_RULE) AS update_rule,
+      TRIM(refc.RDB$DELETE_RULE) AS delete_rule,
+      TRIM(i2.RDB$RELATION_NAME) AS referenced_table_name,
+      TRIM(s2.RDB$FIELD_NAME) AS referenced_column_name,
+      (s.RDB$FIELD_POSITION + 1) AS field_position
+      FROM RDB$INDEX_SEGMENTS s
+      LEFT JOIN RDB$INDICES i ON i.RDB$INDEX_NAME = s.RDB$INDEX_NAME
+      LEFT JOIN RDB$RELATION_CONSTRAINTS rc ON rc.RDB$INDEX_NAME = s.RDB$INDEX_NAME
+      LEFT JOIN RDB$REF_CONSTRAINTS refc ON rc.RDB$CONSTRAINT_NAME = refc.RDB$CONSTRAINT_NAME
+      LEFT JOIN RDB$RELATION_CONSTRAINTS rc2 ON rc2.RDB$CONSTRAINT_NAME = refc.RDB$CONST_NAME_UQ
+      LEFT JOIN RDB$INDICES i2 ON i2.RDB$INDEX_NAME = rc2.RDB$INDEX_NAME
+      LEFT JOIN RDB$INDEX_SEGMENTS s2 ON i2.RDB$INDEX_NAME = s2.RDB$INDEX_NAME AND s.RDB$FIELD_POSITION = s2.RDB$FIELD_POSITION
+      WHERE rc.RDB$CONSTRAINT_TYPE IS NOT NULL
+      ORDER BY i.RDB$RELATION_NAME, s.RDB$FIELD_NAME  
+SQL;
 
-                return $keywordList->isKeyword($name);
+        $results = $this->connection->select($sql);
+        $constraints = [];
+        $ts = '';
+        foreach ($results as $row) {
+            $row = array_change_key_case((array)$row, CASE_LOWER);
+            $tn = strtolower($row['table_name']);
+            $cn = strtolower($row['constraint_name']);
+            $colName = array_get($row, 'column_name');
+            $refColName = array_get($row, 'referenced_column_name');
+            if (isset($constraints[$ts][$tn][$cn])) {
+                $constraints[$ts][$tn][$cn]['column_name'] =
+                    array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
+
+                if (isset($refColName)) {
+                    $constraints[$ts][$tn][$cn]['referenced_column_name'] =
+                        array_merge((array)$constraints[$ts][$tn][$cn]['referenced_column_name'], (array)$refColName);
+                }
+            } else {
+                $constraints[$ts][$tn][$cn] = $row;
             }
-        );
+        }
 
-        return $isKeyword;
+        return $constraints;
     }
 
-    /** {@inheritdoc} */
-    public function createTable($table, $options)
+    public function getPrimaryKeyCommands($table, $column)
     {
-        if (empty($tableName = array_get($table, 'name'))) {
-            throw new \Exception("No valid name exist in the received table schema.");
+        // pre 3.0 versions need sequences and trigger to accomplish autoincrement
+        $trigTable = $this->quoteTableName($table);
+        $trigField = $this->quoteColumnName($column);
+        $table = str_replace('.', '_', $table);
+        // sequence and trigger names maximum length is 30
+        if (26 < strlen($table)) {
+            $table = hash('crc32', $table);
         }
+        $sequence = $this->quoteTableName(strtoupper($table) . '_SEQ');
+        $trigger = $this->quoteTableName(strtoupper($table) . '_TRG');
 
-        if (empty($columns = array_get($options, 'columns'))) {
-            throw new \Exception("No valid fields exist in the received table schema.");
-        }
+        $extras = [];
+        $extras[] = "CREATE SEQUENCE $sequence";
+        $extras[] = <<<SQL
+CREATE TRIGGER {$trigger} FOR {$trigTable}
+BEFORE INSERT AS
+BEGIN
+    IF ((NEW.{$trigField} IS NULL) OR 
+       (NEW.{$trigField} = 0)) THEN
+    BEGIN
+        NEW.{$trigField} = NEXT VALUE FOR {$sequence};
+    END
+END;
+SQL;
 
-        $doctrine = new Driver();
-        $config = $this->getConnectionConfig();
-        $conn = new Connection($config, $doctrine);
-        $sm = $doctrine->getSchemaManager($conn);
-        $schema = $sm->createSchema();
-        $table = $schema->createTable($tableName);
-        $primaryKeys = [];
-
-        foreach ($columns as $name => $info) {
-            $options = $this->getDoctrineColumnOptions($info);
-            if (filter_var(array_get($options, 'is_primary_key'), FILTER_VALIDATE_BOOLEAN) === true) {
-                $primaryKeys[] = $name;
-            }
-
-            $table->addColumn($name, $options['_type'], $options);
-        }
-
-        if (!empty($primaryKeys)) {
-            $table->setPrimaryKey(['id']);
-        }
-        $sm->dropAndCreateTable($table);
-
-        return true;
-    }
-
-    /**
-     * Generates column options for Doctrine Column type.
-     *
-     * @param array $info
-     *
-     * @return array
-     */
-    protected function getDoctrineColumnOptions($info)
-    {
-        $info = $this->cleanFieldInfo($info);
-        $type = $info['type'];
-        $length = array_get($info, 'length');
-        $precision = array_get($info, 'precision', $length);
-        $scale = array_get($info, 'scale');
-        $notnull = !array_get($info, 'allow_null', true);
-        $autoincrement = filter_var(array_get($info, 'auto_increment'), FILTER_VALIDATE_BOOLEAN);
-        $default = array_get($info, 'default');
-        $comment = array_get($info, 'description', array_get($info, 'comment', array_get($info, 'label')));
-
-        $options = [
-            'notnull'        => $notnull,
-            'autoincrement'  => $autoincrement,
-            '_type'          => $type,
-            'is_primary_key' => array_get($info, 'is_primary_key', false)
-        ];
-
-        if (!empty($length)) {
-            $options['length'] = $length;
-        }
-        if (!empty($scale) && !empty($precision)) {
-            $options['precision'] = $precision;
-            $options['scale'] = $scale;
-        }
-        if (!empty($default)) {
-            $options['default'] = $default;
-        }
-        if (!empty($comment)) {
-            $options['comment'] = $comment;
-        }
-
-        return $options;
+        return $extras;
     }
 
     /** {@inheritdoc} */
     public function dropTable($table)
     {
-        $table = trim($table, '".');
-        $doctrine = new Driver();
-        $config = $this->getConnectionConfig();
-        $conn = new Connection($config, $doctrine);
-        $sm = $doctrine->getSchemaManager($conn);
-        $sequences = $sm->listSequences();
-        $sm->dropTable($table);
-        foreach ($sequences as $sequence) {
-            $sName = $sequence->getName();
-            if (strpos($sName, $table . "_") !== false) {
-                $sm->dropSequence($sName);
-            }
+        $result = parent::dropTable($table);
+
+        $table = str_replace(['.', '"'], ['_', ''], $table);
+        // sequence and trigger names maximum length is 30
+        if (26 < strlen($table)) {
+            $table = hash('crc32', $table);
+        }
+        $sequence = $this->quoteTableName(strtoupper($table) . '_SEQ');
+        $sql = <<<SQL
+DROP SEQUENCE {$sequence};
+SQL;
+        try {
+            $this->connection->statement($sql);
+        } catch (\Exception $ex) {
+
         }
 
-        return true;
-    }
+        $trigger = $this->quoteTableName(strtoupper($table) . '_TRG');
+        $params = [':trigger1' => $trigger, ':trigger2' => $trigger];
+        $sql = <<<SQL
+DROP TRIGGER {$trigger};
+SQL;
+        try {
+            $this->connection->statement($sql, $params);
+        } catch (\Exception $ex) {
 
-    /** {@inheritdoc} */
-    public function dropColumns($table, $columns)
-    {
-        $table = trim($table, '"');
-        if (is_string($columns)) {
-            $columns = (array)$columns;
-        }
-        foreach ($columns as $key => $val) {
-            $columns[$key] = trim($val, '"');
-        }
-        $doctrine = new Driver();
-        $config = $this->getConnectionConfig();
-        $conn = new Connection($config, $doctrine);
-        $sm = $doctrine->getSchemaManager($conn);
-        $tableInfo = $sm->listTableDetails($table);
-        $cols = $tableInfo->getColumns();
-
-        $drops = [];
-        foreach ($cols as $name => $col) {
-            if (in_array($name, $columns)) {
-                $drops[] = $col;
-            }
         }
 
-        $td = new TableDiff($table, [], [], $drops);
-        $sm->alterTable($td);
-    }
-
-    /** {@inheritdoc} */
-    public function updateTable($tableSchema, $changes)
-    {
-        $doctrine = new Driver();
-        $config = $this->getConnectionConfig();
-        $conn = new Connection($config, $doctrine);
-        $sm = $doctrine->getSchemaManager($conn);
-
-        //  Is there a name update
-        if (!empty($changes['new_name'])) {
-            // todo change table name, has issue with references
-        }
-
-        // update column types
-        if (!empty($changes['columns']) && is_array($changes['columns'])) {
-            $columns = [];
-            foreach ($changes['columns'] as $name => $definition) {
-                $options = $this->getDoctrineColumnOptions($definition);
-                $columns[] = new Column($name, Type::getType($options['_type']), $options);
-            }
-
-            $td = new TableDiff($tableSchema->getName(), $columns);
-            $sm->alterTable($td);
-        }
-        if (!empty($changes['alter_columns']) && is_array($changes['alter_columns'])) {
-            $columnDiff = [];
-            foreach ($changes['alter_columns'] as $name => $definition) {
-                $options = $this->getDoctrineColumnOptions($definition);
-                $columnDiff[] = new ColumnDiff(
-                    $name,
-                    new Column($name, Type::getType($options['_type']), $options),
-                    ['type', 'notnull', 'precision', 'scale', 'default', 'comment']
-                );
-            }
-
-            $td = new TableDiff($tableSchema->getName(), [], $columnDiff);
-            $sm->alterTable($td);
-        }
-        if (!empty($changes['drop_columns']) && is_array($changes['drop_columns'])) {
-            $columns = [];
-            foreach ($changes['drop_columns'] as $name => $definition) {
-                $options = $this->getDoctrineColumnOptions($definition);
-                $columns[] = new Column($name, Type::getType($options['_type']), $options);
-            }
-
-            $td = new TableDiff($tableSchema->getName(), [], [], $columns);
-            $sm->alterTable($td);
-        }
+        return $result;
     }
 
     /**
@@ -361,21 +356,31 @@ class FirebirdSchema extends Schema
         return $out;
     }
 
-    /**
-     * Gets connection configs.
-     *
-     * @return array
-     */
-    private function getConnectionConfig()
+    public static function isUndiscoverableType($type)
     {
-        return [
-            'host'     => $this->connection->getConfig('host'),
-            'port'     => $this->connection->getConfig('port'),
-            'dbname'   => $this->connection->getConfig('database'),
-            'user'     => $this->connection->getConfig('username'),
-            'password' => $this->connection->getConfig('password'),
-            'charset'  => $this->connection->getConfig('charset'),
-        ];
+        switch ($type) {
+            case DbSimpleTypes::TYPE_BOOLEAN:
+                return true;
+        }
+
+        return parent::isUndiscoverableType($type);
+    }
+
+    public function makeConstraintName($prefix, $table, $column = null)
+    {
+        $temp = parent::makeConstraintName($prefix, $table, $column);
+        // must be less than 30 characters
+        if (30 < strlen($temp)) {
+            $temp = substr($temp, strlen($prefix . '_'));
+            $temp = $prefix . '_' . hash('crc32', $temp);
+        }
+
+        return $temp;
+    }
+
+    public function getTimestampForSet()
+    {
+        return $this->connection->raw('(CURRENT_TIMESTAMP)');
     }
 
     /** {@inheritdoc} */
@@ -400,16 +405,18 @@ class FirebirdSchema extends Schema
                 // check foreign tables
                 break;
 
+            case DbSimpleTypes::TYPE_DATETIME:
+                $info['type'] = 'timestamp';
+                break;
+
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
                 $info['type'] = 'timestamp';
                 $default = (isset($info['default'])) ? $info['default'] : null;
                 if (!isset($default)) {
                     $default = 'CURRENT_TIMESTAMP';
-                    if (DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE === $type) {
-                        $default .= ' ON UPDATE CURRENT_TIMESTAMP';
-                    }
-                    $info['default'] = ['expression' => $default];
+                    // ON UPDATE CURRENT_TIMESTAMP not supported by Firebird, use triggers
+                    $info['default'] = $default;
                 }
                 break;
 
@@ -433,12 +440,31 @@ class FirebirdSchema extends Schema
                 $info['type_extras'] = '(19,4)';
                 break;
 
+            case DbSimpleTypes::TYPE_DOUBLE:
+                $info['type'] = 'double precision';
+                break;
+
             case DbSimpleTypes::TYPE_STRING:
-                $info['type'] = 'string';
+                $fixed =
+                    (isset($info['fixed_length'])) ? filter_var($info['fixed_length'], FILTER_VALIDATE_BOOLEAN) : false;
+                $national =
+                    (isset($info['supports_multibyte'])) ? filter_var($info['supports_multibyte'],
+                        FILTER_VALIDATE_BOOLEAN) : false;
+                if ($fixed) {
+                    $info['type'] = ($national) ? 'nchar' : 'char';
+                } elseif ($national) {
+                    $info['type'] = 'national character varying';
+                } else {
+                    $info['type'] = 'varchar';
+                }
                 break;
 
             case DbSimpleTypes::TYPE_BINARY:
-                $info['type'] = 'binary';
+                $info['type'] = 'blob sub_type binary';
+                break;
+
+            case DbSimpleTypes::TYPE_TEXT:
+                $info['type'] = 'blob sub_type text';
                 break;
         }
     }
@@ -476,9 +502,19 @@ class FirebirdSchema extends Schema
                                 ? $info['decimals']
                                 : ((isset($info['scale'])) ? $info['scale']
                                 : null);
+                        $length = ($length > 18) ? 18 : $length;
                         $info['type_extras'] = (!empty($scale)) ? "($length,$scale)" : "($length)";
                         $info['length'] = $length;
                         $info['scale'] = $scale;
+                    }
+                } else {
+                    $range = trim($info['type_extras'], '()');
+                    if (strpos($range, ',')) {
+                        $length = (int)strstr($range, ',', true);
+                        $scale = (int)trim(strstr($range, ','), ',');
+                        if ($length > 18) {
+                            $info['type_extras'] = '(18,' . $scale . ')';
+                        }
                     }
                 }
 
@@ -488,7 +524,6 @@ class FirebirdSchema extends Schema
                 }
                 break;
 
-            case 'char':
             case 'blob':
                 $length = (isset($info['length'])) ? $info['length'] : ((isset($info['size'])) ? $info['size'] : null);
                 if (isset($length)) {
@@ -497,7 +532,15 @@ class FirebirdSchema extends Schema
                 }
                 break;
 
-            case 'string':
+            case 'char':
+            case 'character':
+            case 'varchar':
+            case 'character varying':
+            case 'nchar':
+            case 'national character':
+            case 'national character varying':
+            case 'national char':
+            case 'national char varying':
                 $length = (isset($info['length'])) ? $info['length'] : ((isset($info['size'])) ? $info['size'] : null);
                 if (isset($length)) {
                     $info['type_extras'] = "($length)";
@@ -509,19 +552,13 @@ class FirebirdSchema extends Schema
                 }
                 break;
 
+            case 'date':
             case 'time':
             case 'timestamp':
-            case 'date':
                 $default = (isset($info['default'])) ? $info['default'] : null;
                 if ('0000-00-00 00:00:00' == $default) {
                     // read back from MySQL has formatted zeros, can't send that back
                     $info['default'] = 0;
-                }
-
-                $length = (isset($info['length'])) ? $info['length'] : ((isset($info['size'])) ? $info['size'] : null);
-                if (isset($length)) {
-                    $info['type_extras'] = "($length)";
-                    $info['length'] = $length;
                 }
                 break;
         }
@@ -534,9 +571,6 @@ class FirebirdSchema extends Schema
         $typeExtras = (isset($info['type_extras'])) ? $info['type_extras'] : null;
 
         $definition = $type . $typeExtras;
-
-        $allowNull = (isset($info['allow_null'])) ? filter_var($info['allow_null'], FILTER_VALIDATE_BOOLEAN) : false;
-        $definition .= ($allowNull) ? '' : ' NOT NULL';
 
         $default = (isset($info['default'])) ? $info['default'] : null;
         if (isset($default)) {
@@ -551,15 +585,18 @@ class FirebirdSchema extends Schema
             }
         }
 
-        $auto = (isset($info['auto_increment'])) ? filter_var($info['auto_increment'], FILTER_VALIDATE_BOOLEAN) : false;
-        if ($auto) {
-            $definition .= ' AUTO_INCREMENT';
-        }
+        $allowNull = (isset($info['allow_null'])) ? filter_var($info['allow_null'], FILTER_VALIDATE_BOOLEAN) : false;
+        $definition .= ($allowNull) ? '' : ' NOT NULL';
+
+//        $auto = (isset($info['auto_increment'])) ? filter_var($info['auto_increment'], FILTER_VALIDATE_BOOLEAN) : false;
+//        if ($auto) {
+//            $definition .= ' AUTO_INCREMENT';
+//        }
 
         if (isset($info['is_primary_key']) && filter_var($info['is_primary_key'], FILTER_VALIDATE_BOOLEAN)) {
             $definition .= ' PRIMARY KEY';
         } elseif (isset($info['is_unique']) && filter_var($info['is_unique'], FILTER_VALIDATE_BOOLEAN)) {
-            $definition .= ' UNIQUE KEY';
+            $definition .= ' UNIQUE';
         }
 
         return $definition;
