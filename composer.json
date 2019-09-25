@@ -27,6 +27,14 @@
     "issues": "https://github.com/dreamfactorysoftware/df-firebird/issues",
     "wiki":   "https://wiki.dreamfactory.com"
   },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "repositories": [
+    {
+      "type": "vcs",
+      "url":  "https://github.com/yaroslavmo/df-sqldb"
+    }
+  ],
   "require":     {
     "dreamfactory/df-sqldb": "~0.16.0"
   },
